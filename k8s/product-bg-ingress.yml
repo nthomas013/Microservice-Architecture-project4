@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: product-bg-ingress
+  namespace: ecommerce
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+
+    # Blue/Green weighted routing
+    alb.ingress.kubernetes.io/actions.product-weighted: >
+      {
+        "type":"forward",
+        "forwardConfig":{
+          "targetGroups":[
+            {
+              "serviceName":"product-blue",
+              "servicePort":"80",
+              "weight":90
+            },
+            {
+              "serviceName":"product-green",
+              "servicePort":"80",
+              "weight":10
+            }
+          ]
+        }
+      }
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /products
+            pathType: Prefix
+            backend:
+              service:
+                name: product-weighted
+                port:
+                  name: use-annotation
+

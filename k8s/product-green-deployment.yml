@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-green
+  namespace: ecommerce
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: product
+      version: green
+  template:
+    metadata:
+      labels:
+        app: product
+        version: green
+    spec:
+      containers:
+        - name: product
+          image: hashicorp/http-echo
+          args:
+            - "-text=Product Service v2 (GREEN)"
+          ports:
+            - containerPort: 5678
+          resources:
+            requests:
+              cpu: "100m"
+            limits:
+              cpu: "500m"
+
