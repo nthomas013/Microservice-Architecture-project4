@@ -1,0 +1,62 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_REGION = "ap-south-1"
+    ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"
+    IMAGE_TAG = "v2"
+    CLUSTER_NAME = "your-eks-cluster-name"
+  }
+
+  stages {
+
+    stage("Checkout") {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage("Docker Build") {
+      steps {
+        sh """
+          docker build -t myproject-app:${IMAGE_TAG} .
+          docker tag myproject-app:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
+        """
+      }
+    }
+
+    stage("ECR Login & Push") {
+      steps {
+        sh """
+          aws ecr get-login-password --region ${AWS_REGION} \
+          | docker login --username AWS --password-stdin ${ECR_REPO}
+
+          docker push ${ECR_REPO}:${IMAGE_TAG}
+        """
+      }
+    }
+
+    stage("Deploy Canary") {
+      steps {
+        sh """
+          aws eks update-kubeconfig \
+            --region ${AWS_REGION} \
+            --name ${CLUSTER_NAME}
+
+          kubectl set image deployment/product-canary \
+            product=${ECR_REPO}:${IMAGE_TAG} \
+            -n ecommerce
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Canary deployed successfully 🚀"
+    }
+    failure {
+      echo "Deployment failed ❌"
+    }
+  }
+}

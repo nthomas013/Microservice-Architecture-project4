@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service-v2
+  namespace: ecommerce
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: product
+        version: v2
+    spec:
+      containers:
+      - name: product
+        image: your-dockerhub/product-service:v2
+        ports:
+        - containerPort: 5678
+        env:
+        - name: VERSION
+          value: "v2"
