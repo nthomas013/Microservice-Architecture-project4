@@ -4,8 +4,8 @@ pipeline {
   environment {
     KUBE_NAMESPACE = "ecommerce"
     ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"
-    GIT_SSH_CREDENTIALS = "MylinuxmintVMkey-updated" // SSH credential ID
-    REPO_URL = "git@github.com:nthomas013/Microservice-Architecture-project4.git" // your repo SSH URL
+    GIT_SSH_CREDENTIALS = "MylinuxmintVMkey-updated" // 
+    REPO_URL = "git@github.com:nthomas013/Microservice-Architecture-project4.git" // 
     BRANCH = "main"
   }
 
@@ -13,19 +13,29 @@ pipeline {
 
     stage('Build & Push Image') {
       steps {
-        sh '''
-          docker build \
-            -t product-service:${BUILD_NUMBER} \
-            -f product-service/Dockerfile product-service
+        // Use AWS credentials stored in Jenkins
+        withCredentials([[
+          $class: 'AmazonWebServicesCredentialsBinding',
+          credentialsId: 'aws-ecr-push' 
+        ]]) {
+          sh '''
+            echo "Logging into AWS ECR..."
+            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_REPO%/*}
 
-          docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
-          docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:stable-${BUILD_NUMBER}
-          docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:canary-${BUILD_NUMBER}
+            echo "Building Docker image..."
+            docker build -t product-service:${BUILD_NUMBER} -f product-service/Dockerfile product-service
 
-          docker push ${ECR_REPO}:${BUILD_NUMBER}
-          docker push ${ECR_REPO}:stable-${BUILD_NUMBER}
-          docker push ${ECR_REPO}:canary-${BUILD_NUMBER}
-        '''
+            echo "Tagging Docker images..."
+            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
+            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:stable-${BUILD_NUMBER}
+            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:canary-${BUILD_NUMBER}
+
+            echo "Pushing Docker images to ECR..."
+            docker push ${ECR_REPO}:${BUILD_NUMBER}
+            docker push ${ECR_REPO}:stable-${BUILD_NUMBER}
+            docker push ${ECR_REPO}:canary-${BUILD_NUMBER}
+          '''
+        }
       }
     }
 
