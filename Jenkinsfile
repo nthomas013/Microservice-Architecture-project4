@@ -10,7 +10,7 @@ pipeline {
     stage('Build & Push Image') {
       steps {
         sh '''
-          docker build -t product-service:${BUILD_NUMBER} .
+          sh 'docker build -t product-service:1 product-service'
           docker tag product-service:${BUILD_NUMBER} <ECR_REPO>:${BUILD_NUMBER}
           docker push <ECR_REPO>:${BUILD_NUMBER}
         '''
