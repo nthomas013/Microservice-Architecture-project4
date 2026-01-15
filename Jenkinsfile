@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     KUBE_NAMESPACE = "ecommerce"
-    ECR_REPO = "<ECR_REPO>"   // keep your actual ECR repo here
+    ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"   
   }
 
   stages {
