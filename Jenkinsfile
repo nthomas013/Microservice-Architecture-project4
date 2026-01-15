@@ -3,7 +3,10 @@ pipeline {
 
   environment {
     KUBE_NAMESPACE = "ecommerce"
-    ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"   
+    ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"
+    GIT_SSH_CREDENTIALS = "MylinuxmintVMkey-updated" // SSH credential ID
+    REPO_URL = "git@github.com:nthomas013/Microservice-Architecture-project4.git" // your repo SSH URL
+    BRANCH = "main"
   }
 
   stages {
@@ -23,6 +26,23 @@ pipeline {
           docker push ${ECR_REPO}:stable-${BUILD_NUMBER}
           docker push ${ECR_REPO}:canary-${BUILD_NUMBER}
         '''
+      }
+    }
+
+    stage('Git Commit & Push (Optional)') {
+      when {
+        expression { return fileExists('k8s/product-stable.yaml') }
+      }
+      steps {
+        sshagent([env.GIT_SSH_CREDENTIALS]) {
+          sh '''
+            git config --global user.email "jenkins@example.com"
+            git config --global user.name "Jenkins CI"
+            git add k8s/*.yaml
+            git commit -m "Update Kubernetes manifests for build ${BUILD_NUMBER}" || echo "No changes to commit"
+            git push ${REPO_URL} ${BRANCH}
+          '''
+        }
       }
     }
 
