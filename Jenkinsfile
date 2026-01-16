@@ -2,64 +2,62 @@ pipeline {
   agent any
 
   environment {
+    AWS_REGION    = "ap-south-1"
+    ECR_REGISTRY  = "743296984102.dkr.ecr.ap-south-1.amazonaws.com"
+    ECR_REPO      = "myproject-app"
     KUBE_NAMESPACE = "ecommerce"
-    ECR_REPO = "743296984102.dkr.ecr.ap-south-1.amazonaws.com/myproject-app"
-    GIT_SSH_CREDENTIALS = "MylinuxmintVMkey-updated" // 
-    REPO_URL = "git@github.com:nthomas013/Microservice-Architecture-project4.git" // 
-    BRANCH = "main"
+    IMAGE_TAG     = "${BUILD_NUMBER}"
   }
 
   stages {
 
-    stage('Build & Push Image') {
+    stage('Checkout') {
       steps {
-        // Use AWS credentials stored in Jenkins
-        withCredentials([[
-          $class: 'AmazonWebServicesCredentialsBinding',
-          credentialsId: 'aws-ecr-push' 
-        ]]) {
+        checkout scm
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh '''
+          docker build \
+            -t ${ECR_REPO}:${IMAGE_TAG} \
+            -f product-service/Dockerfile product-service
+        '''
+      }
+    }
+
+    stage('Login to AWS ECR') {
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-jenkins',
+           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
+        ]) {
           sh '''
-            echo "Logging into AWS ECR..."
-            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_REPO%/*}
-
-            echo "Building Docker image..."
-            docker build -t product-service:${BUILD_NUMBER} -f product-service/Dockerfile product-service
-
-            echo "Tagging Docker images..."
-            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
-            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:stable-${BUILD_NUMBER}
-            docker tag product-service:${BUILD_NUMBER} ${ECR_REPO}:canary-${BUILD_NUMBER}
-
-            echo "Pushing Docker images to ECR..."
-            docker push ${ECR_REPO}:${BUILD_NUMBER}
-            docker push ${ECR_REPO}:stable-${BUILD_NUMBER}
-            docker push ${ECR_REPO}:canary-${BUILD_NUMBER}
+            aws ecr get-login-password --region ${AWS_REGION} \
+            | docker login --username AWS --password-stdin ${ECR_REGISTRY}
           '''
         }
       }
     }
 
-    stage('Git Commit & Push (Optional)') {
-      when {
-        expression { return fileExists('k8s/product-stable.yaml') }
-      }
+    stage('Tag & Push Image') {
       steps {
-        sshagent([env.GIT_SSH_CREDENTIALS]) {
-          sh '''
-            git config --global user.email "jenkins@example.com"
-            git config --global user.name "Jenkins CI"
-            git add k8s/*.yaml
-            git commit -m "Update Kubernetes manifests for build ${BUILD_NUMBER}" || echo "No changes to commit"
-            git push ${REPO_URL} ${BRANCH}
-          '''
-        }
+        sh '''
+          docker tag ${ECR_REPO}:${IMAGE_TAG} \
+            ${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
+
+          docker push ${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
+        '''
       }
     }
 
     stage('Deploy Stable') {
       steps {
         sh '''
-          sed -i "s/IMAGE_TAG/stable-${BUILD_NUMBER}/g" k8s/product-stable.yaml
+          sed -i "s/IMAGE_TAG/${IMAGE_TAG}/g" k8s/product-stable.yaml
           kubectl apply -f k8s/product-stable.yaml -n ${KUBE_NAMESPACE}
         '''
       }
@@ -68,7 +66,7 @@ pipeline {
     stage('Deploy Canary') {
       steps {
         sh '''
-          sed -i "s/IMAGE_TAG/canary-${BUILD_NUMBER}/g" k8s/product-canary.yaml
+          sed -i "s/IMAGE_TAG/${IMAGE_TAG}/g" k8s/product-canary.yaml
           kubectl apply -f k8s/product-canary.yaml -n ${KUBE_NAMESPACE}
         '''
       }
