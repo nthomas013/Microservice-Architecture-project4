@@ -3,11 +3,10 @@ FROM node:20-slim
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
+
+RUN npm config set registry https://registry.npmjs.org/ \
+ && npm install --omit=dev
 
 COPY src ./src
 
-ENV PORT=3000
-EXPOSE 3000
-
-CMD ["npm", "start"]
+CMD ["node", "src/index.js"]
