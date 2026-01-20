@@ -2,14 +2,19 @@ FROM node:20-slim
 
 WORKDIR /app
 
+# Fix Debian repos
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources
 
-COPY package*.json ./
-
+# Make npm resilient in CI / Jenkins / Docker
 RUN npm config set registry https://registry.npmjs.org/ \
- && npm install --omit=dev
+ && npm config set fetch-retries 5 \
+ && npm config set fetch-retry-mintimeout 20000 \
+ && npm config set fetch-retry-maxtimeout 120000 \
+ && npm config set network-timeout 600000
 
-COPY src ./src
+COPY package*.json ./
+RUN npm install --omit=dev
 
-CMD ["node", "src/index.js"]
+COPY . .
+CMD ["npm", "start"]
