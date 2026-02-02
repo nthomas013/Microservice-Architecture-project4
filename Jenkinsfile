@@ -1,99 +1,91 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    AWS_REGION    = "ap-south-1"
-    ECR_REGISTRY  = "743296984102.dkr.ecr.ap-south-1.amazonaws.com"
-    ECR_REPO      = "myproject-app"
-    KUBE_NAMESPACE = "ecommerce"
-    IMAGE_TAG     = "${BUILD_NUMBER}"
-  }
-
-  stages {
-
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    environment {
+        REGISTRY = "192.168.1.43:8082"
+        REPO     = "docker-hosted"
+        IMAGE    = "myproject-app"
+        TAG      = "${BUILD_NUMBER}"
     }
 
-    stage('Build Docker Image') {
-      steps {
-        sh '''
-          docker build \
-            -t ${ECR_REPO}:${IMAGE_TAG} \
-            -f product-service/Dockerfile product-service
-        '''
-      }
-    }
+    stages {
 
-    stage('Login to AWS ECR') {
-      steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws-jenkins',
-           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
-        ]) {
-          sh '''
-            aws ecr get-login-password --region ${AWS_REGION} \
-            | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-          '''
+        stage('Checkout Source') {
+            steps {
+                checkout scm
+            }
         }
-      }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                  echo "Building Docker image..."
+                  docker build \
+                    -t ${IMAGE}:${TAG} \
+                    -f product-service/Dockerfile \
+                    product-service
+                '''
+            }
+        }
+
+        stage('Tag Image for Nexus') {
+            steps {
+                sh '''
+                  echo "Tagging image for Nexus..."
+                  docker tag ${IMAGE}:${TAG} \
+                    ${REGISTRY}/${REPO}/${IMAGE}:${TAG}
+                '''
+            }
+        }
+
+        stage('Login to Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-docker-creds',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh '''
+                      echo "Logging into Nexus registry..."
+                      echo "$NEXUS_PASS" | docker login ${REGISTRY} \
+                        -u "$NEXUS_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Image to Nexus') {
+            steps {
+                sh '''
+                  echo "Pushing image to Nexus..."
+                  docker push ${REGISTRY}/${REPO}/${IMAGE}:${TAG}
+                '''
+            }
+        }
+
+        stage('Cleanup Local Images') {
+            steps {
+                sh '''
+                  echo "Cleaning up local Docker images..."
+                  docker rmi ${IMAGE}:${TAG} || true
+                  docker rmi ${REGISTRY}/${REPO}/${IMAGE}:${TAG} || true
+                '''
+            }
+        }
     }
 
-    stage('Tag & Push Image') {
-      steps {
-        sh '''
-          docker tag ${ECR_REPO}:${IMAGE_TAG} \
-            ${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
+    post {
+        success {
+            echo "✅ Build & Push completed successfully!"
+            echo "Image: ${REGISTRY}/${REPO}/${IMAGE}:${TAG}"
+        }
 
-          docker push ${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
-        '''
-      }
-    }
+        failure {
+            echo "❌ Pipeline failed. Check logs above."
+        }
 
-    stage('Deploy Stable') {
-      steps {
-        sh '''
-          sed -i "s/IMAGE_TAG/${IMAGE_TAG}/g" k8s/product-stable.yaml
-          kubectl apply -f k8s/product-stable.yaml -n ${KUBE_NAMESPACE}
-        '''
-      }
+        always {
+            sh 'docker system prune -f || true'
+        }
     }
-
-    stage('Deploy Canary') {
-      steps {
-        sh '''
-          sed -i "s/IMAGE_TAG/${IMAGE_TAG}/g" k8s/product-canary.yaml
-          kubectl apply -f k8s/product-canary.yaml -n ${KUBE_NAMESPACE}
-        '''
-      }
-    }
-
-    stage('Wait & Verify') {
-      steps {
-        sh '''
-          sleep 60
-          kubectl rollout status deployment/product-canary -n ${KUBE_NAMESPACE}
-        '''
-      }
-    }
-
-    stage('Manual Approval') {
-      steps {
-        input message: 'Promote Canary to Stable?', ok: 'Promote'
-      }
-    }
-
-    stage('Promote Canary') {
-      steps {
-        sh '''
-          kubectl scale deployment product-stable --replicas=0 -n ${KUBE_NAMESPACE}
-          kubectl scale deployment product-canary --replicas=3 -n ${KUBE_NAMESPACE}
-        '''
-      }
-    }
-  }
 }
